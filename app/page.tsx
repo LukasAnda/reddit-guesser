@@ -34,13 +34,14 @@ export default function Home() {
       .then((subs) => setSubreddits(subs))
       .catch(() => setState("error"));
 
+    const counterBase = "https://corsproxy.io/?url=" + encodeURIComponent("https://api.counterapi.dev/v1/reddit-guesser/visits");
     if (!localStorage.getItem("counted")) {
-      fetch("https://api.counterapi.dev/v1/reddit-guesser/visits/up")
+      fetch(counterBase + encodeURIComponent("/up"))
         .then((r) => r.json())
         .then((d) => { setVisitors(d.count); localStorage.setItem("counted", "1"); })
         .catch(() => {});
     } else {
-      fetch("https://api.counterapi.dev/v1/reddit-guesser/visits")
+      fetch(counterBase)
         .then((r) => r.json())
         .then((d) => setVisitors(d.count))
         .catch(() => {});
