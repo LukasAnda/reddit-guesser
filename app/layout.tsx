@@ -21,6 +21,7 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="google-adsense-account" content="ca-pub-4421417503139987" />
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4421417503139987" crossOrigin="anonymous"></script>
       </head>
       <body className={`${geist.variable} antialiased`}>{children}</body>
     </html>
