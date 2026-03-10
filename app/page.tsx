@@ -48,7 +48,6 @@ export default function Home() {
 
   const loadRound = useCallback(async () => {
     if (subreddits.length < 2) return;
-    setPosts(null);
     setState("loading");
     setPicked(null);
     setCorrect(null);
@@ -153,13 +152,13 @@ export default function Home() {
 
       {/* Game area */}
       <main className="flex flex-1 w-full items-center justify-center px-4 py-8">
-        {state === "loading" && !posts ? (
+        {!posts ? (
           <div className="flex flex-col items-center gap-3">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-600 dark:border-t-zinc-300" />
             <p className="text-xs text-zinc-500 tracking-wide">Loading posts...</p>
           </div>
-        ) : posts ? (
-          <div className="relative flex w-full max-w-3xl flex-col items-stretch gap-3 md:flex-row md:gap-4">
+        ) : (
+          <div className={`relative flex w-full max-w-3xl flex-col items-stretch gap-3 md:flex-row md:gap-4 transition-opacity duration-300 ${state === "loading" ? "opacity-0" : "opacity-100"}`}>
             {posts.map((post, i) => {
               const idx = i as 0 | 1;
               const winner = posts[0].ups >= posts[1].ups ? 0 : 1;
@@ -236,7 +235,7 @@ export default function Home() {
               </div>
             )}
           </div>
-        ) : null}
+        )}
       </main>
 
       {/* Next button with fill progress */}
