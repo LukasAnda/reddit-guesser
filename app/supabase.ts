@@ -5,7 +5,6 @@ const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1bnBkbm92enR3b2htZWh6bWVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNTE4NjIsImV4cCI6MjA4ODcyNzg2Mn0.1sXl968z11j8bYLyaZ5TfaPr8kWIVioIp7tXUf7Cnsg";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 const API_BASE = `${SUPABASE_URL}/functions/v1`;
 
 export interface LeaderboardEntry {
@@ -17,11 +16,9 @@ export interface LeaderboardEntry {
 
 export type LeaderboardPeriod = "daily" | "weekly" | "all";
 
-export interface RoundData {
+export interface RoundRegistration {
   session_id: string;
   round_id: string;
-  post_a: { title: string; subreddit: string; image: string | null };
-  post_b: { title: string; subreddit: string; image: string | null };
 }
 
 export interface PickResult {
@@ -45,11 +42,21 @@ async function callEdge<T>(fn: string, body: Record<string, unknown>): Promise<T
   return res.json();
 }
 
-export async function newRound(sessionId?: string): Promise<RoundData> {
-  return callEdge<RoundData>("new-round", { session_id: sessionId });
+// Register a round with the server (sends post data, server stores upvotes)
+export async function registerRound(
+  sessionId: string | undefined,
+  postA: { title: string; subreddit: string; image: string | null; ups: number },
+  postB: { title: string; subreddit: string; image: string | null; ups: number }
+): Promise<RoundRegistration> {
+  return callEdge<RoundRegistration>("new-round", {
+    session_id: sessionId,
+    post_a: postA,
+    post_b: postB,
+  });
 }
 
-export async function pick(
+// Submit pick to server — server checks answer and returns result
+export async function submitPick(
   sessionId: string,
   roundId: string,
   picked: 0 | 1
