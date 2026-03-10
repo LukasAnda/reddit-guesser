@@ -11,11 +11,11 @@ export interface Post {
 }
 
 const REDDIT_BASE = "https://www.reddit.com";
+const CORS_PROXY = "https://corsproxy.io/?url=";
 
 async function fetchJson(url: string) {
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-  });
+  const proxiedUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
+  const res = await fetch(proxiedUrl);
   if (!res.ok) throw new Error(`Reddit API error: ${res.status}`);
   return res.json();
 }
