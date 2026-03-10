@@ -8,6 +8,7 @@ export interface Post {
   subreddit: string;
   ups: number;
   id: string;
+  imageUrl: string | null;
 }
 
 const REDDIT_BASE = "https://www.reddit.com";
@@ -18,6 +19,23 @@ async function fetchJson(url: string) {
   const res = await fetch(proxiedUrl);
   if (!res.ok) throw new Error(`Reddit API error: ${res.status}`);
   return res.json();
+}
+
+function extractImageUrl(post: Record<string, unknown>): string | null {
+  // Try preview images first (best quality, most reliable)
+  try {
+    const preview = post.preview as { images?: { source?: { url?: string } }[] };
+    const src = preview?.images?.[0]?.source?.url;
+    if (src) return src.replace(/&amp;/g, "&");
+  } catch {}
+
+  // Direct image URL (i.redd.it, i.imgur.com)
+  const url = post.url as string | undefined;
+  if (url && /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url)) {
+    return url;
+  }
+
+  return null;
 }
 
 export async function fetchPopularSubreddits(
@@ -56,13 +74,14 @@ export async function fetchTopPosts(
   const data = await fetchJson(url);
 
   return data.data.children
-    .map((child: { data: { title: string; subreddit: string; ups: number; id: string; over_18: boolean } }) => child.data)
-    .filter((post: { over_18: boolean }) => !post.over_18)
-    .map((post: { title: string; subreddit: string; ups: number; id: string }) => ({
-      title: post.title,
-      subreddit: post.subreddit,
-      ups: post.ups,
-      id: post.id,
+    .map((child: { data: Record<string, unknown> }) => child.data)
+    .filter((post: Record<string, unknown>) => !post.over_18)
+    .map((post: Record<string, unknown>) => ({
+      title: post.title as string,
+      subreddit: post.subreddit as string,
+      ups: post.ups as number,
+      id: post.id as string,
+      imageUrl: extractImageUrl(post),
     }));
 }
 

@@ -26,6 +26,7 @@ export default function Home() {
   const [picked, setPicked] = useState<0 | 1 | null>(null);
   const [correct, setCorrect] = useState<boolean | null>(null);
   const [visitors, setVisitors] = useState<number | null>(null);
+  const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
   const postCacheRef = useRef<Map<string, Post[]>>(new Map());
 
   useEffect(() => {
@@ -33,7 +34,6 @@ export default function Home() {
       .then((subs) => setSubreddits(subs))
       .catch(() => setState("error"));
 
-    // Count unique visitors (once per browser)
     if (!localStorage.getItem("counted")) {
       fetch("https://api.counterapi.dev/v1/reddit-guesser/visits/up")
         .then((r) => r.json())
@@ -84,6 +84,7 @@ export default function Home() {
         if (post1.ups === post2.ups) continue;
 
         setPosts([post1, post2]);
+        setImgErrors(new Set());
         setState("playing");
         return;
       } catch {
@@ -117,7 +118,6 @@ export default function Home() {
     }
   };
 
-  // Auto-advance after 3 seconds
   useEffect(() => {
     if (state !== "revealed") return;
     const timer = setTimeout(() => loadRound(), 3000);
@@ -170,20 +170,21 @@ export default function Home() {
       </div>
 
       {/* Game area */}
-      <main className="flex flex-1 w-full items-center justify-center px-4 py-8">
+      <main className="flex flex-1 w-full items-center justify-center px-4 py-8 pb-24">
         {!posts ? (
           <div className="flex flex-col items-center gap-3">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-600 dark:border-t-zinc-300" />
             <p className="text-xs text-zinc-500 tracking-wide">Loading posts...</p>
           </div>
         ) : (
-          <div className={`relative flex w-full max-w-3xl flex-col items-stretch gap-3 md:flex-row md:gap-4 transition-opacity duration-300 ${state === "loading" ? "opacity-0" : "opacity-100"}`}>
+          <div className={`relative flex w-full max-w-4xl flex-col items-stretch gap-3 md:flex-row md:gap-4 transition-opacity duration-300 ${state === "loading" ? "opacity-0" : "opacity-100"}`}>
             {posts.map((post, i) => {
               const idx = i as 0 | 1;
               const winner = posts[0].ups >= posts[1].ups ? 0 : 1;
               const isWinner = state === "revealed" && winner === idx;
               const isLoser = state === "revealed" && winner !== idx;
               const wasPicked = picked === idx;
+              const showImage = post.imageUrl && !imgErrors.has(post.id);
 
               return (
                 <button
@@ -191,7 +192,7 @@ export default function Home() {
                   onClick={() => handlePick(idx)}
                   disabled={state !== "playing"}
                   className={`
-                    group relative flex flex-1 flex-col justify-between rounded-xl p-5 md:p-6 text-left transition-all duration-300 min-h-[180px]
+                    group relative flex flex-1 flex-col overflow-hidden rounded-xl text-left transition-all duration-300
                     ${state === "playing"
                       ? "bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200/80 dark:hover:bg-zinc-800 cursor-pointer active:scale-[0.98]"
                       : isWinner
@@ -200,46 +201,64 @@ export default function Home() {
                     }
                   `}
                 >
-                  {/* Subreddit tag */}
-                  <span className="inline-block self-start rounded-full bg-zinc-200/80 dark:bg-zinc-800 px-2.5 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                    r/{post.subreddit}
-                  </span>
+                  {/* Image */}
+                  {showImage && (
+                    <div className="relative w-full h-40 md:h-48 bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={post.imageUrl!}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        onError={() => setImgErrors((prev) => new Set(prev).add(post.id))}
+                      />
+                    </div>
+                  )}
 
-                  {/* Post title */}
-                  <h2 className="mt-3 text-base md:text-lg font-semibold leading-snug tracking-tight line-clamp-3">
-                    {post.title}
-                  </h2>
+                  {/* Content */}
+                  <div className={`flex flex-1 flex-col justify-between p-5 md:p-6 ${showImage ? "" : "min-h-[180px]"}`}>
+                    {/* Subreddit tag */}
+                    <div>
+                      <span className="inline-block rounded-full bg-zinc-200/80 dark:bg-zinc-800 px-2.5 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                        r/{post.subreddit}
+                      </span>
 
-                  {/* Bottom: vote count or prompt */}
-                  <div className="mt-4 flex items-end justify-between gap-2">
-                    {state === "revealed" ? (
-                      <div className="animate-count-up flex items-baseline gap-1.5">
-                        <span className={`text-2xl md:text-3xl font-black tabular-nums ${isWinner ? "text-green-600 dark:text-green-400" : "text-zinc-400 dark:text-zinc-600"}`}>
-                          {formatNumber(post.ups)}
+                      {/* Post title */}
+                      <h2 className={`mt-3 font-semibold leading-snug tracking-tight ${showImage ? "text-sm md:text-base line-clamp-2" : "text-base md:text-lg line-clamp-3"}`}>
+                        {post.title}
+                      </h2>
+                    </div>
+
+                    {/* Bottom: vote count or prompt */}
+                    <div className="mt-4 flex items-end justify-between gap-2">
+                      {state === "revealed" ? (
+                        <div className="animate-count-up flex items-baseline gap-1.5">
+                          <span className={`text-2xl md:text-3xl font-black tabular-nums ${isWinner ? "text-green-600 dark:text-green-400" : "text-zinc-400 dark:text-zinc-600"}`}>
+                            {formatNumber(post.ups)}
+                          </span>
+                          <span className={`text-[11px] ${isWinner ? "text-green-600/60 dark:text-green-400/60" : "text-zinc-400/60"}`}>
+                            upvotes
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 transition-colors">
+                          &uarr; this one
                         </span>
-                        <span className={`text-[11px] ${isWinner ? "text-green-600/60 dark:text-green-400/60" : "text-zinc-400/60"}`}>
-                          upvotes
+                      )}
+
+                      {state === "revealed" && wasPicked && (
+                        <span
+                          className={`animate-fade-in text-xs font-bold tracking-wide uppercase ${correct ? "text-green-600 dark:text-green-400" : "text-red-500"}`}
+                        >
+                          {correct ? "Yes" : "Nope"}
                         </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 transition-colors">
-                        &uarr; this one
-                      </span>
-                    )}
+                      )}
 
-                    {state === "revealed" && wasPicked && (
-                      <span
-                        className={`animate-fade-in text-xs font-bold tracking-wide uppercase ${correct ? "text-green-600 dark:text-green-400" : "text-red-500"}`}
-                      >
-                        {correct ? "Yes" : "Nope"}
-                      </span>
-                    )}
-
-                    {isLoser && !wasPicked && state === "revealed" && (
-                      <span className="animate-fade-in text-[10px] text-zinc-400 dark:text-zinc-600">
-                        lower
-                      </span>
-                    )}
+                      {isLoser && !wasPicked && state === "revealed" && (
+                        <span className="animate-fade-in text-[10px] text-zinc-400 dark:text-zinc-600">
+                          lower
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               );
