@@ -12,6 +12,7 @@ import {
   fetchLeaderboard,
   submitScore,
   type LeaderboardEntry,
+  type LeaderboardPeriod,
   type Round,
 } from "./supabase";
 
@@ -30,13 +31,19 @@ function generateSessionId(): string {
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return `${hrs}h`;
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return `${days}d`;
 }
+
+const PERIODS: { key: LeaderboardPeriod; label: string }[] = [
+  { key: "daily", label: "24h" },
+  { key: "weekly", label: "7d" },
+  { key: "all", label: "All" },
+];
 
 export default function Home() {
   const [subreddits, setSubreddits] = useState<Subreddit[]>([]);
@@ -51,8 +58,10 @@ export default function Home() {
   const postCacheRef = useRef<Map<string, Post[]>>(new Map());
 
   // Leaderboard state
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [lbData, setLbData] = useState<Record<LeaderboardPeriod, LeaderboardEntry[]>>({
+    daily: [], weekly: [], all: [],
+  });
+  const [lbPeriod, setLbPeriod] = useState<LeaderboardPeriod>("all");
   const [nameInput, setNameInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
@@ -62,6 +71,16 @@ export default function Home() {
   // Proof-of-play tracking
   const sessionIdRef = useRef(generateSessionId());
   const roundsRef = useRef<Round[]>([]);
+
+  const refreshLeaderboard = useCallback(() => {
+    Promise.all([
+      fetchLeaderboard("daily").catch(() => []),
+      fetchLeaderboard("weekly").catch(() => []),
+      fetchLeaderboard("all").catch(() => []),
+    ]).then(([daily, weekly, all]) => {
+      setLbData({ daily, weekly, all });
+    });
+  }, []);
 
   useEffect(() => {
     fetchPopularSubreddits(150)
@@ -81,16 +100,11 @@ export default function Home() {
         .catch(() => {});
     }
 
-    fetchLeaderboard().then(setLeaderboard).catch(() => {});
+    refreshLeaderboard();
 
-    // Restore saved name
     const saved = localStorage.getItem("playerName");
     if (saved) setNameInput(saved);
-  }, []);
-
-  const refreshLeaderboard = useCallback(() => {
-    fetchLeaderboard().then(setLeaderboard).catch(() => {});
-  }, []);
+  }, [refreshLeaderboard]);
 
   const getPostsForSubreddit = useCallback(
     async (sub: string): Promise<Post[]> => {
@@ -151,7 +165,6 @@ export default function Home() {
     const isCorrect = index === winner;
     setCorrect(isCorrect);
 
-    // Record round for proof-of-play
     roundsRef.current.push({
       postA_id: posts[0].id,
       postB_id: posts[1].id,
@@ -168,7 +181,6 @@ export default function Home() {
         return next;
       });
     } else {
-      // Wrong answer: check if streak was worth submitting
       setScore((prevScore) => {
         if (prevScore >= 3) {
           setPendingScore(prevScore);
@@ -181,7 +193,6 @@ export default function Home() {
     setState("revealed");
   }, [state, posts]);
 
-  // Auto-advance (pause when name prompt is showing)
   useEffect(() => {
     if (state !== "revealed" || showNamePrompt) return;
     const timer = setTimeout(() => loadRound(), 3000);
@@ -206,7 +217,6 @@ export default function Home() {
     if (result.ok) {
       setSubmitMsg("Submitted!");
       refreshLeaderboard();
-      // Reset session for next game
       sessionIdRef.current = generateSessionId();
       roundsRef.current = [];
     } else {
@@ -220,6 +230,8 @@ export default function Home() {
       loadRound();
     }, 1500);
   };
+
+  const currentLb = lbData[lbPeriod];
 
   if (state === "error") {
     return (
@@ -238,7 +250,91 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center">
+    <div className="flex min-h-dvh flex-col items-center relative">
+      {/* Leaderboard — top right */}
+      <div className="fixed top-4 right-4 z-40 w-52 hidden md:block">
+        <div className="rounded-xl bg-zinc-100/90 dark:bg-zinc-900/90 backdrop-blur-sm p-3">
+          {/* Period tabs */}
+          <div className="flex gap-1 mb-2.5">
+            {PERIODS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setLbPeriod(p.key)}
+                className={`flex-1 rounded-md py-1 text-[10px] font-bold tracking-wide cursor-pointer transition-colors ${
+                  lbPeriod === p.key
+                    ? "bg-foreground text-background"
+                    : "text-zinc-400 hover:text-foreground"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Entries */}
+          {currentLb.length === 0 ? (
+            <p className="text-[10px] text-zinc-400 text-center py-2">No scores yet</p>
+          ) : (
+            <div className="space-y-1">
+              {currentLb.map((entry, i) => (
+                <div key={entry.id} className="flex items-center gap-1.5 text-xs leading-tight">
+                  <span className={`w-4 text-right tabular-nums font-bold shrink-0 ${i < 3 ? "text-foreground" : "text-zinc-400"}`}>
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 truncate">{entry.player_name}</span>
+                  <span className="font-black tabular-nums shrink-0">{entry.score}</span>
+                  <span className="text-[9px] text-zinc-400 dark:text-zinc-600 w-8 text-right shrink-0">
+                    {timeAgo(entry.created_at)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile leaderboard — collapsible at bottom */}
+      <details className="fixed bottom-0 left-0 right-0 z-30 md:hidden">
+        <summary className="flex items-center justify-center gap-1 bg-zinc-100/90 dark:bg-zinc-900/90 backdrop-blur-sm py-2 cursor-pointer text-[10px] font-bold tracking-widest uppercase text-zinc-400">
+          Leaderboard
+        </summary>
+        <div className="bg-zinc-100/95 dark:bg-zinc-900/95 backdrop-blur-sm px-4 pb-4 pt-1">
+          <div className="flex gap-1 mb-2">
+            {PERIODS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setLbPeriod(p.key)}
+                className={`flex-1 rounded-md py-1 text-[10px] font-bold tracking-wide cursor-pointer transition-colors ${
+                  lbPeriod === p.key
+                    ? "bg-foreground text-background"
+                    : "text-zinc-400 hover:text-foreground"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {currentLb.length === 0 ? (
+            <p className="text-[10px] text-zinc-400 text-center py-2">No scores yet</p>
+          ) : (
+            <div className="space-y-1">
+              {currentLb.map((entry, i) => (
+                <div key={entry.id} className="flex items-center gap-1.5 text-xs leading-tight">
+                  <span className={`w-4 text-right tabular-nums font-bold shrink-0 ${i < 3 ? "text-foreground" : "text-zinc-400"}`}>
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 truncate">{entry.player_name}</span>
+                  <span className="font-black tabular-nums shrink-0">{entry.score}</span>
+                  <span className="text-[9px] text-zinc-400 dark:text-zinc-600 w-8 text-right shrink-0">
+                    {timeAgo(entry.created_at)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </details>
+
       {/* Header */}
       <header className="w-full max-w-2xl px-6 pt-10 pb-2 text-center">
         <h1 className="text-4xl md:text-5xl font-black tracking-tighter leading-none">
@@ -249,49 +345,12 @@ export default function Home() {
         <p className="mt-2 text-xs tracking-widest uppercase text-zinc-400 dark:text-zinc-600">
           Which post got more upvotes?
         </p>
-        <div className="mt-1.5 flex items-center justify-center gap-3">
-          {visitors !== null && (
-            <span className="text-[10px] text-zinc-300 dark:text-zinc-700 tabular-nums">
-              {visitors.toLocaleString()} players
-            </span>
-          )}
-          <button
-            onClick={() => { setShowLeaderboard(!showLeaderboard); refreshLeaderboard(); }}
-            className="text-[10px] text-zinc-400 dark:text-zinc-600 hover:text-foreground transition-colors cursor-pointer underline underline-offset-2"
-          >
-            {showLeaderboard ? "hide" : "leaderboard"}
-          </button>
-        </div>
+        {visitors !== null && (
+          <p className="mt-1.5 text-[10px] text-zinc-300 dark:text-zinc-700 tabular-nums">
+            {visitors.toLocaleString()} players
+          </p>
+        )}
       </header>
-
-      {/* Leaderboard panel */}
-      {showLeaderboard && (
-        <div className="w-full max-w-sm px-4 mt-2 animate-fade-in">
-          <div className="rounded-xl bg-zinc-100 dark:bg-zinc-900 p-4">
-            <h3 className="text-xs font-bold tracking-widest uppercase text-zinc-400 dark:text-zinc-600 mb-3">
-              Top Scores
-            </h3>
-            {leaderboard.length === 0 ? (
-              <p className="text-xs text-zinc-400">No scores yet. Be the first!</p>
-            ) : (
-              <div className="space-y-1.5">
-                {leaderboard.map((entry, i) => (
-                  <div key={entry.id} className="flex items-center gap-2 text-sm">
-                    <span className={`w-5 text-right tabular-nums font-bold ${i < 3 ? "text-foreground" : "text-zinc-400"}`}>
-                      {i + 1}
-                    </span>
-                    <span className="flex-1 truncate">{entry.player_name}</span>
-                    <span className="font-black tabular-nums">{entry.score}</span>
-                    <span className="text-[10px] text-zinc-400 dark:text-zinc-600 w-14 text-right">
-                      {timeAgo(entry.created_at)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Score */}
       <div className="mt-4 flex items-baseline gap-3 tabular-nums">
@@ -335,7 +394,6 @@ export default function Home() {
                     }
                   `}
                 >
-                  {/* Image */}
                   {showImage && (
                     <div className="relative w-full h-40 md:h-48 bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -348,7 +406,6 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Content */}
                   <div className={`flex flex-1 flex-col justify-between p-5 md:p-6 ${showImage ? "" : "min-h-[180px]"}`}>
                     <div>
                       <span className="inline-block rounded-full bg-zinc-200/80 dark:bg-zinc-800 px-2.5 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
@@ -376,9 +433,7 @@ export default function Home() {
                       )}
 
                       {state === "revealed" && wasPicked && (
-                        <span
-                          className={`animate-fade-in text-xs font-bold tracking-wide uppercase ${correct ? "text-green-600 dark:text-green-400" : "text-red-500"}`}
-                        >
+                        <span className={`animate-fade-in text-xs font-bold tracking-wide uppercase ${correct ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
                           {correct ? "Yes" : "Nope"}
                         </span>
                       )}
@@ -394,7 +449,6 @@ export default function Home() {
               );
             })}
 
-            {/* VS divider */}
             {state === "playing" && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <span className="z-10 flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background text-[11px] font-black tracking-wider">
@@ -446,19 +500,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* Next button with fill progress */}
+      {/* Next button */}
       {state === "revealed" && !showNamePrompt && (
-        <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-8 animate-fade-in">
+        <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-8 md:pb-8 pb-14 animate-fade-in z-20">
           <button
             onClick={() => loadRound()}
             className="relative overflow-hidden rounded-full bg-zinc-300 dark:bg-zinc-800 px-7 py-3 text-sm font-bold tracking-tight active:scale-95 transition-transform cursor-pointer"
           >
-            <span
-              className="absolute inset-0 bg-foreground origin-left animate-fill-bar"
-            />
-            <span className="relative z-10 mix-blend-difference text-white">
-              Next
-            </span>
+            <span className="absolute inset-0 bg-foreground origin-left animate-fill-bar" />
+            <span className="relative z-10 mix-blend-difference text-white">Next</span>
           </button>
         </div>
       )}

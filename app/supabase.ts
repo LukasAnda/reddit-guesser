@@ -21,14 +21,30 @@ export interface Round {
   timestamp: number;
 }
 
-export async function fetchLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
-  const { data, error } = await supabase
+export type LeaderboardPeriod = "daily" | "weekly" | "all";
+
+export async function fetchLeaderboard(
+  period: LeaderboardPeriod = "all",
+  limit = 10
+): Promise<LeaderboardEntry[]> {
+  let query = supabase
     .from("leaderboard")
     .select("id, player_name, score, created_at")
     .order("score", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(limit);
 
+  if (period === "daily") {
+    const since = new Date();
+    since.setHours(since.getHours() - 24);
+    query = query.gte("created_at", since.toISOString());
+  } else if (period === "weekly") {
+    const since = new Date();
+    since.setDate(since.getDate() - 7);
+    query = query.gte("created_at", since.toISOString());
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return data ?? [];
 }
