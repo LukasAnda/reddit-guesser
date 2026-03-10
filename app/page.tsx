@@ -2,18 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  fetchPopularSubreddits,
-  fetchTopPosts,
-  pickRandom,
-  type Post,
-  type Subreddit,
-} from "./reddit";
-import {
+  newRound,
+  pick as pickAnswer,
   fetchLeaderboard,
   submitScore,
+  type RoundData,
+  type PickResult,
   type LeaderboardEntry,
   type LeaderboardPeriod,
-  type Round,
 } from "./supabase";
 
 type GameState = "loading" | "playing" | "revealed" | "error";
@@ -24,10 +20,6 @@ function formatNumber(n: number): string {
   return n.toString();
 }
 
-function generateSessionId(): string {
-  return crypto.randomUUID();
-}
-
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -35,8 +27,7 @@ function timeAgo(dateStr: string): string {
   if (mins < 60) return `${mins}m`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d`;
+  return `${Math.floor(hrs / 24)}d`;
 }
 
 const PERIODS: { key: LeaderboardPeriod; label: string }[] = [
@@ -46,18 +37,22 @@ const PERIODS: { key: LeaderboardPeriod; label: string }[] = [
 ];
 
 export default function Home() {
-  const [subreddits, setSubreddits] = useState<Subreddit[]>([]);
-  const [posts, setPosts] = useState<[Post, Post] | null>(null);
+  const [round, setRound] = useState<RoundData | null>(null);
+  const [result, setResult] = useState<PickResult | null>(null);
   const [state, setState] = useState<GameState>("loading");
   const [score, setScore] = useState(0);
-  const [bestScore, setBestScore] = useState(0);
+  const [bestScore, setBestScore] = useState(() => {
+    if (typeof window !== "undefined") {
+      return parseInt(localStorage.getItem("bestScore") || "0", 10);
+    }
+    return 0;
+  });
   const [picked, setPicked] = useState<0 | 1 | null>(null);
-  const [correct, setCorrect] = useState<boolean | null>(null);
   const [visitors, setVisitors] = useState<number | null>(null);
   const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
-  const postCacheRef = useRef<Map<string, Post[]>>(new Map());
+  const sessionIdRef = useRef<string | undefined>(undefined);
 
-  // Leaderboard state
+  // Leaderboard
   const [lbData, setLbData] = useState<Record<LeaderboardPeriod, LeaderboardEntry[]>>({
     daily: [], weekly: [], all: [],
   });
@@ -67,28 +62,24 @@ export default function Home() {
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [pendingScore, setPendingScore] = useState(0);
-
-  // Proof-of-play tracking
-  const sessionIdRef = useRef(generateSessionId());
-  const roundsRef = useRef<Round[]>([]);
-  const pendingRoundsRef = useRef<Round[]>([]);
-  const pendingSessionRef = useRef("");
+  const pendingSessionRef = useRef<string>("");
 
   const refreshLeaderboard = useCallback(() => {
     Promise.all([
       fetchLeaderboard("daily").catch(() => []),
       fetchLeaderboard("weekly").catch(() => []),
       fetchLeaderboard("all").catch(() => []),
-    ]).then(([daily, weekly, all]) => {
-      setLbData({ daily, weekly, all });
-    });
+    ]).then(([daily, weekly, all]) => setLbData({ daily, weekly, all }));
   }, []);
 
+  // Persist best score
   useEffect(() => {
-    fetchPopularSubreddits(150)
-      .then((subs) => setSubreddits(subs))
-      .catch(() => setState("error"));
+    if (bestScore > 0) {
+      localStorage.setItem("bestScore", String(bestScore));
+    }
+  }, [bestScore]);
 
+  useEffect(() => {
     const counterBase = "https://corsproxy.io/?url=" + encodeURIComponent("https://api.counterapi.dev/v1/reddit-guesser/visits");
     if (!localStorage.getItem("counted")) {
       fetch(counterBase + encodeURIComponent("/up"))
@@ -108,104 +99,60 @@ export default function Home() {
     if (saved) setNameInput(saved);
   }, [refreshLeaderboard]);
 
-  const getPostsForSubreddit = useCallback(
-    async (sub: string): Promise<Post[]> => {
-      const cache = postCacheRef.current;
-      if (cache.has(sub) && cache.get(sub)!.length > 0) {
-        return cache.get(sub)!;
-      }
-      const posts = await fetchTopPosts(sub);
-      cache.set(sub, posts);
-      return posts;
-    },
-    []
-  );
-
   const loadRound = useCallback(async () => {
-    if (subreddits.length < 2) return;
     setState("loading");
     setPicked(null);
-    setCorrect(null);
+    setResult(null);
 
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        const sub1 = pickRandom(subreddits);
-        let sub2 = pickRandom(subreddits);
-        while (sub2.name === sub1.name) sub2 = pickRandom(subreddits);
-
-        const [posts1, posts2] = await Promise.all([
-          getPostsForSubreddit(sub1.name),
-          getPostsForSubreddit(sub2.name),
-        ]);
-
-        if (posts1.length === 0 || posts2.length === 0) continue;
-
-        const post1 = pickRandom(posts1);
-        const post2 = pickRandom(posts2);
-        if (post1.ups === post2.ups) continue;
-
-        setPosts([post1, post2]);
-        setImgErrors(new Set());
-        setState("playing");
-        return;
-      } catch {
-        continue;
-      }
+    try {
+      const data = await newRound(sessionIdRef.current);
+      sessionIdRef.current = data.session_id;
+      setRound(data);
+      setImgErrors(new Set());
+      setState("playing");
+    } catch {
+      setState("error");
     }
-    setState("error");
-  }, [subreddits, getPostsForSubreddit]);
+  }, []);
 
+  // First load
   useEffect(() => {
-    if (subreddits.length > 0 && !posts) loadRound();
-  }, [subreddits, posts, loadRound]);
+    loadRound();
+  }, [loadRound]);
 
-  const handlePick = useCallback((index: 0 | 1) => {
-    if (state !== "playing" || !posts) return;
+  const handlePick = useCallback(async (index: 0 | 1) => {
+    if (state !== "playing" || !round) return;
     setPicked(index);
+    setState("revealed");
 
-    const winner = posts[0].ups >= posts[1].ups ? 0 : 1;
-    const isCorrect = index === winner;
-    setCorrect(isCorrect);
+    try {
+      const res = await pickAnswer(round.session_id, round.round_id, index);
+      setResult(res);
 
-    roundsRef.current.push({
-      postA_id: posts[0].id,
-      postB_id: posts[1].id,
-      postA_ups: posts[0].ups,
-      postB_ups: posts[1].ups,
-      picked: index,
-      timestamp: Date.now(),
-    });
-
-    if (isCorrect) {
-      setScore((s) => {
-        const next = s + 1;
-        setBestScore((b) => Math.max(b, next));
-        return next;
-      });
-    } else {
-      setScore((prevScore) => {
-        if (prevScore >= 3) {
-          // Snapshot the streak rounds (exclude the final wrong one)
-          setPendingScore(prevScore);
-          pendingRoundsRef.current = roundsRef.current.slice(0, -1);
-          pendingSessionRef.current = sessionIdRef.current;
+      if (res.correct) {
+        setScore(res.score);
+        setBestScore((b) => Math.max(b, res.score));
+      } else {
+        // Game over
+        if (res.score >= 3) {
+          setPendingScore(res.score);
+          pendingSessionRef.current = round.session_id;
           setShowNamePrompt(true);
         }
-        // Reset for next streak
-        roundsRef.current = [];
-        sessionIdRef.current = generateSessionId();
-        return 0;
-      });
+        setScore(0);
+        sessionIdRef.current = undefined; // new session next round
+      }
+    } catch {
+      setState("error");
     }
+  }, [state, round]);
 
-    setState("revealed");
-  }, [state, posts]);
-
+  // Auto-advance
   useEffect(() => {
-    if (state !== "revealed" || showNamePrompt) return;
+    if (state !== "revealed" || !result || showNamePrompt) return;
     const timer = setTimeout(() => loadRound(), 3000);
     return () => clearTimeout(timer);
-  }, [state, loadRound, showNamePrompt]);
+  }, [state, result, loadRound, showNamePrompt]);
 
   const handleSubmitScore = async () => {
     const name = nameInput.trim();
@@ -215,18 +162,13 @@ export default function Home() {
 
     localStorage.setItem("playerName", name);
 
-    const result = await submitScore(
-      name,
-      pendingScore,
-      pendingSessionRef.current,
-      pendingRoundsRef.current
-    );
+    const res = await submitScore(name, pendingScore, pendingSessionRef.current);
 
-    if (result.ok) {
+    if (res.ok) {
       setSubmitMsg("Submitted!");
       refreshLeaderboard();
     } else {
-      setSubmitMsg(result.error ?? "Failed to submit");
+      setSubmitMsg(res.error ?? "Failed");
     }
 
     setSubmitting(false);
@@ -239,13 +181,13 @@ export default function Home() {
 
   const currentLb = lbData[lbPeriod];
 
-  if (state === "error") {
+  if (state === "error" && !round) {
     return (
       <div className="flex min-h-dvh items-center justify-center px-4">
         <div className="text-center space-y-4">
-          <p className="text-zinc-500">Could not load data from Reddit.</p>
+          <p className="text-zinc-500">Could not load data.</p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => { sessionIdRef.current = undefined; loadRound(); }}
             className="text-sm text-zinc-400 hover:text-foreground underline underline-offset-4 cursor-pointer"
           >
             Try again
@@ -257,41 +199,32 @@ export default function Home() {
 
   return (
     <div className="flex min-h-dvh flex-col items-center relative">
-      {/* Leaderboard — top right */}
+      {/* Leaderboard — desktop */}
       <div className="fixed top-4 right-4 z-40 w-52 hidden md:block">
         <div className="rounded-xl bg-zinc-100/90 dark:bg-zinc-900/90 backdrop-blur-sm p-3">
-          {/* Period tabs */}
           <div className="flex gap-1 mb-2.5">
             {PERIODS.map((p) => (
               <button
                 key={p.key}
                 onClick={() => setLbPeriod(p.key)}
                 className={`flex-1 rounded-md py-1 text-[10px] font-bold tracking-wide cursor-pointer transition-colors ${
-                  lbPeriod === p.key
-                    ? "bg-foreground text-background"
-                    : "text-zinc-400 hover:text-foreground"
+                  lbPeriod === p.key ? "bg-foreground text-background" : "text-zinc-400 hover:text-foreground"
                 }`}
               >
                 {p.label}
               </button>
             ))}
           </div>
-
-          {/* Entries */}
           {currentLb.length === 0 ? (
             <p className="text-[10px] text-zinc-400 text-center py-2">No scores yet</p>
           ) : (
             <div className="space-y-1">
               {currentLb.map((entry, i) => (
                 <div key={entry.id} className="flex items-center gap-1.5 text-xs leading-tight">
-                  <span className={`w-4 text-right tabular-nums font-bold shrink-0 ${i < 3 ? "text-foreground" : "text-zinc-400"}`}>
-                    {i + 1}
-                  </span>
+                  <span className={`w-4 text-right tabular-nums font-bold shrink-0 ${i < 3 ? "text-foreground" : "text-zinc-400"}`}>{i + 1}</span>
                   <span className="flex-1 truncate">{entry.player_name}</span>
                   <span className="font-black tabular-nums shrink-0">{entry.score}</span>
-                  <span className="text-[9px] text-zinc-400 dark:text-zinc-600 w-8 text-right shrink-0">
-                    {timeAgo(entry.created_at)}
-                  </span>
+                  <span className="text-[9px] text-zinc-400 dark:text-zinc-600 w-8 text-right shrink-0">{timeAgo(entry.created_at)}</span>
                 </div>
               ))}
             </div>
@@ -299,7 +232,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Mobile leaderboard — collapsible at bottom */}
+      {/* Leaderboard — mobile */}
       <details className="fixed bottom-0 left-0 right-0 z-30 md:hidden">
         <summary className="flex items-center justify-center gap-1 bg-zinc-100/90 dark:bg-zinc-900/90 backdrop-blur-sm py-2 cursor-pointer text-[10px] font-bold tracking-widest uppercase text-zinc-400">
           Leaderboard
@@ -311,9 +244,7 @@ export default function Home() {
                 key={p.key}
                 onClick={() => setLbPeriod(p.key)}
                 className={`flex-1 rounded-md py-1 text-[10px] font-bold tracking-wide cursor-pointer transition-colors ${
-                  lbPeriod === p.key
-                    ? "bg-foreground text-background"
-                    : "text-zinc-400 hover:text-foreground"
+                  lbPeriod === p.key ? "bg-foreground text-background" : "text-zinc-400 hover:text-foreground"
                 }`}
               >
                 {p.label}
@@ -326,14 +257,10 @@ export default function Home() {
             <div className="space-y-1">
               {currentLb.map((entry, i) => (
                 <div key={entry.id} className="flex items-center gap-1.5 text-xs leading-tight">
-                  <span className={`w-4 text-right tabular-nums font-bold shrink-0 ${i < 3 ? "text-foreground" : "text-zinc-400"}`}>
-                    {i + 1}
-                  </span>
+                  <span className={`w-4 text-right tabular-nums font-bold shrink-0 ${i < 3 ? "text-foreground" : "text-zinc-400"}`}>{i + 1}</span>
                   <span className="flex-1 truncate">{entry.player_name}</span>
                   <span className="font-black tabular-nums shrink-0">{entry.score}</span>
-                  <span className="text-[9px] text-zinc-400 dark:text-zinc-600 w-8 text-right shrink-0">
-                    {timeAgo(entry.created_at)}
-                  </span>
+                  <span className="text-[9px] text-zinc-400 dark:text-zinc-600 w-8 text-right shrink-0">{timeAgo(entry.created_at)}</span>
                 </div>
               ))}
             </div>
@@ -370,24 +297,30 @@ export default function Home() {
 
       {/* Game area */}
       <main className="flex flex-1 w-full items-center justify-center px-4 py-8 pb-24">
-        {!posts ? (
+        {!round ? (
           <div className="flex flex-col items-center gap-3">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-600 dark:border-t-zinc-300" />
-            <p className="text-xs text-zinc-500 tracking-wide">Loading posts...</p>
+            <p className="text-xs text-zinc-500 tracking-wide">Loading...</p>
           </div>
         ) : (
           <div className={`relative flex w-full max-w-4xl flex-col items-stretch gap-3 md:flex-row md:gap-4 transition-opacity duration-300 ${state === "loading" ? "opacity-0" : "opacity-100"}`}>
-            {posts.map((post, i) => {
+            {[round.post_a, round.post_b].map((post, i) => {
               const idx = i as 0 | 1;
-              const winner = posts[0].ups >= posts[1].ups ? 0 : 1;
-              const isWinner = state === "revealed" && winner === idx;
-              const isLoser = state === "revealed" && winner !== idx;
+              const hasResult = state === "revealed" && result;
+              const winner = hasResult
+                ? (result.post_a_ups >= result.post_b_ups ? 0 : 1)
+                : null;
+              const isWinner = winner === idx;
+              const isLoser = winner !== null && winner !== idx;
               const wasPicked = picked === idx;
-              const showImage = post.imageUrl && !imgErrors.has(post.id);
+              const showImage = post.image && !imgErrors.has(`${round.round_id}-${i}`);
+              const ups = hasResult
+                ? (idx === 0 ? result.post_a_ups : result.post_b_ups)
+                : null;
 
               return (
                 <button
-                  key={post.id + "-" + i}
+                  key={`${round.round_id}-${i}`}
                   onClick={() => handlePick(idx)}
                   disabled={state !== "playing"}
                   className={`
@@ -404,10 +337,10 @@ export default function Home() {
                     <div className="relative w-full h-40 md:h-48 bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={post.imageUrl!}
+                        src={post.image!}
                         alt=""
                         className="w-full h-full object-cover"
-                        onError={() => setImgErrors((prev) => new Set(prev).add(post.id))}
+                        onError={() => setImgErrors((prev) => new Set(prev).add(`${round.round_id}-${i}`))}
                       />
                     </div>
                   )}
@@ -423,10 +356,10 @@ export default function Home() {
                     </div>
 
                     <div className="mt-4 flex items-end justify-between gap-2">
-                      {state === "revealed" ? (
+                      {hasResult && ups !== null ? (
                         <div className="animate-count-up flex items-baseline gap-1.5">
                           <span className={`text-2xl md:text-3xl font-black tabular-nums ${isWinner ? "text-green-600 dark:text-green-400" : "text-zinc-400 dark:text-zinc-600"}`}>
-                            {formatNumber(post.ups)}
+                            {formatNumber(ups)}
                           </span>
                           <span className={`text-[11px] ${isWinner ? "text-green-600/60 dark:text-green-400/60" : "text-zinc-400/60"}`}>
                             upvotes
@@ -438,16 +371,14 @@ export default function Home() {
                         </span>
                       )}
 
-                      {state === "revealed" && wasPicked && (
-                        <span className={`animate-fade-in text-xs font-bold tracking-wide uppercase ${correct ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
-                          {correct ? "Yes" : "Nope"}
+                      {hasResult && wasPicked && (
+                        <span className={`animate-fade-in text-xs font-bold tracking-wide uppercase ${result.correct ? "text-green-600 dark:text-green-400" : "text-red-500"}`}>
+                          {result.correct ? "Yes" : "Nope"}
                         </span>
                       )}
 
-                      {isLoser && !wasPicked && state === "revealed" && (
-                        <span className="animate-fade-in text-[10px] text-zinc-400 dark:text-zinc-600">
-                          lower
-                        </span>
+                      {isLoser && !wasPicked && hasResult && (
+                        <span className="animate-fade-in text-[10px] text-zinc-400 dark:text-zinc-600">lower</span>
                       )}
                     </div>
                   </div>
@@ -466,12 +397,12 @@ export default function Home() {
         )}
       </main>
 
-      {/* Name prompt overlay */}
+      {/* Name prompt */}
       {showNamePrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-fade-in px-4">
           <div className="w-full max-w-xs rounded-2xl bg-background p-6 space-y-4 text-center">
             <p className="text-lg font-black">Streak of {pendingScore}!</p>
-            <p className="text-xs text-zinc-500">Submit your score to the leaderboard?</p>
+            <p className="text-xs text-zinc-500">Submit to the leaderboard?</p>
             <input
               type="text"
               value={nameInput}
@@ -489,7 +420,7 @@ export default function Home() {
             )}
             <div className="flex gap-2">
               <button
-                onClick={() => { setShowNamePrompt(false); roundsRef.current = []; sessionIdRef.current = generateSessionId(); loadRound(); }}
+                onClick={() => { setShowNamePrompt(false); loadRound(); }}
                 className="flex-1 rounded-lg py-2 text-xs font-medium text-zinc-500 hover:text-foreground transition-colors cursor-pointer"
               >
                 Skip
@@ -507,8 +438,8 @@ export default function Home() {
       )}
 
       {/* Next button */}
-      {state === "revealed" && !showNamePrompt && (
-        <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-8 md:pb-8 pb-14 animate-fade-in z-20">
+      {state === "revealed" && result && !showNamePrompt && (
+        <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-14 md:pb-8 animate-fade-in z-20">
           <button
             onClick={() => loadRound()}
             className="relative overflow-hidden rounded-full bg-zinc-300 dark:bg-zinc-800 px-7 py-3 text-sm font-bold tracking-tight active:scale-95 transition-transform cursor-pointer"

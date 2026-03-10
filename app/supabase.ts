@@ -1,9 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  "https://zunpdnovztwohmehzmef.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1bnBkbm92enR3b2htZWh6bWVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNTE4NjIsImV4cCI6MjA4ODcyNzg2Mn0.1sXl968z11j8bYLyaZ5TfaPr8kWIVioIp7tXUf7Cnsg"
-);
+const SUPABASE_URL = "https://zunpdnovztwohmehzmef.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1bnBkbm92enR3b2htZWh6bWVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNTE4NjIsImV4cCI6MjA4ODcyNzg2Mn0.1sXl968z11j8bYLyaZ5TfaPr8kWIVioIp7tXUf7Cnsg";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const API_BASE = `${SUPABASE_URL}/functions/v1`;
 
 export interface LeaderboardEntry {
   id: number;
@@ -12,16 +15,51 @@ export interface LeaderboardEntry {
   created_at: string;
 }
 
-export interface Round {
-  postA_id: string;
-  postB_id: string;
-  postA_ups: number;
-  postB_ups: number;
-  picked: 0 | 1;
-  timestamp: number;
+export type LeaderboardPeriod = "daily" | "weekly" | "all";
+
+export interface RoundData {
+  session_id: string;
+  round_id: string;
+  post_a: { title: string; subreddit: string; image: string | null };
+  post_b: { title: string; subreddit: string; image: string | null };
 }
 
-export type LeaderboardPeriod = "daily" | "weekly" | "all";
+export interface PickResult {
+  correct: boolean;
+  post_a_ups: number;
+  post_b_ups: number;
+  score: number;
+  game_over: boolean;
+}
+
+async function callEdge<T>(fn: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${API_BASE}/${fn}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
+export async function newRound(sessionId?: string): Promise<RoundData> {
+  return callEdge<RoundData>("new-round", { session_id: sessionId });
+}
+
+export async function pick(
+  sessionId: string,
+  roundId: string,
+  picked: 0 | 1
+): Promise<PickResult> {
+  return callEdge<PickResult>("pick", {
+    session_id: sessionId,
+    round_id: roundId,
+    picked,
+  });
+}
 
 export async function fetchLeaderboard(
   period: LeaderboardPeriod = "all",
@@ -52,16 +90,13 @@ export async function fetchLeaderboard(
 export async function submitScore(
   playerName: string,
   score: number,
-  sessionId: string,
-  rounds: Round[]
+  sessionId: string
 ): Promise<{ ok?: boolean; error?: string }> {
-  const { data, error } = await supabase.rpc("submit_score", {
+  const { data, error } = await supabase.rpc("save_leaderboard_score", {
     p_player_name: playerName,
     p_score: score,
     p_session_id: sessionId,
-    p_rounds: rounds,
   });
-
   if (error) return { error: error.message };
   return data as { ok?: boolean; error?: string };
 }
