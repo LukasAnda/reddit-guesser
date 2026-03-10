@@ -48,6 +48,7 @@ export default function Home() {
 
   const loadRound = useCallback(async () => {
     if (subreddits.length < 2) return;
+    setPosts(null);
     setState("loading");
     setPicked(null);
     setCorrect(null);
@@ -238,14 +239,19 @@ export default function Home() {
         ) : null}
       </main>
 
-      {/* Next button */}
+      {/* Next button with fill progress */}
       {state === "revealed" && (
         <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-8 animate-fade-in">
           <button
             onClick={() => loadRound()}
-            className="rounded-full bg-foreground text-background px-7 py-3 text-sm font-bold tracking-tight hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+            className="relative overflow-hidden rounded-full bg-zinc-300 dark:bg-zinc-800 px-7 py-3 text-sm font-bold tracking-tight active:scale-95 transition-transform cursor-pointer"
           >
-            Next
+            <span
+              className="absolute inset-0 bg-foreground origin-left animate-fill-bar"
+            />
+            <span className="relative z-10 mix-blend-difference text-white">
+              Next
+            </span>
           </button>
         </div>
       )}

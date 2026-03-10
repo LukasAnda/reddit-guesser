@@ -52,3 +52,12 @@ body {
 .animate-pulse-win {
   animation: pulse-win 0.6s ease-out;
 }
+
+@keyframes fill-bar {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.animate-fill-bar {
+  animation: fill-bar 3s linear forwards;
+}
