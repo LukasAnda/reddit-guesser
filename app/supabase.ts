@@ -94,6 +94,18 @@ export async function fetchLeaderboard(
   return data ?? [];
 }
 
+export interface SharedRoundResult {
+  session_id: string;
+  round_id: string;
+  post_a: { title: string; subreddit: string; image: string | null };
+  post_b: { title: string; subreddit: string; image: string | null };
+  ups: [number, number];
+}
+
+export async function fetchSharedRound(roundId: string): Promise<SharedRoundResult> {
+  return callEdge<SharedRoundResult>("shared-round", { round_id: roundId });
+}
+
 export async function submitScore(
   playerName: string,
   score: number,

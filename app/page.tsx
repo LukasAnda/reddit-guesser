@@ -13,6 +13,7 @@ import {
   submitPick,
   fetchLeaderboard,
   submitScore,
+  fetchSharedRound,
   type PickResult,
   type LeaderboardEntry,
   type LeaderboardPeriod,
@@ -78,6 +79,7 @@ export default function Home() {
   const prefetchRef = useRef<Promise<PrefetchedRound | null> | null>(null);
   const upsRef = useRef<[number, number]>([0, 0]);
   const localScoreRef = useRef(0);
+  const sharedRoundLoaded = useRef(false);
 
   // Leaderboard
   const [lbData, setLbData] = useState<Record<LeaderboardPeriod, LeaderboardEntry[]>>({
@@ -105,6 +107,30 @@ export default function Home() {
   }, [bestScore]);
 
   useEffect(() => {
+    // Check for shared round URL param
+    const params = new URLSearchParams(window.location.search);
+    const sharedId = params.get("r");
+    if (sharedId) {
+      sharedRoundLoaded.current = true;
+      fetchSharedRound(sharedId)
+        .then((data) => {
+          sessionIdRef.current = data.session_id;
+          roundIdRef.current = data.round_id;
+          upsRef.current = data.ups;
+          setDisplayPosts([
+            { title: data.post_a.title, subreddit: data.post_a.subreddit, image: data.post_a.image },
+            { title: data.post_b.title, subreddit: data.post_b.subreddit, image: data.post_b.image },
+          ]);
+          setImgErrors(new Set());
+          setState("playing");
+          // Clean up URL without reload
+          window.history.replaceState({}, "", window.location.pathname);
+        })
+        .catch(() => {
+          sharedRoundLoaded.current = false;
+        });
+    }
+
     fetchPopularSubreddits(150)
       .then((subs) => setSubreddits(subs))
       .catch(() => setState("error"));
@@ -206,7 +232,7 @@ export default function Home() {
   }, [subreddits, buildRound]);
 
   useEffect(() => {
-    if (subreddits.length > 0 && !displayPosts) {
+    if (subreddits.length > 0 && !displayPosts && !sharedRoundLoaded.current) {
       localScoreRef.current = 0;
       loadRound();
     }
@@ -466,7 +492,7 @@ export default function Home() {
         <div className="fixed bottom-0 left-0 right-0 flex justify-center gap-3 pb-14 md:pb-8 animate-fade-in z-20">
           <button
             onClick={() => {
-              const url = "https://lukasanda.github.io/reddit-guesser/";
+              const url = `https://lukasanda.github.io/reddit-guesser/?r=${roundIdRef.current}`;
               const text = `r/${displayPosts[0].subreddit} vs r/${displayPosts[1].subreddit} — ${score > 0 ? `${score} in a row!` : "Can you guess right?"}\n\n${url}`;
               if (navigator.share) {
                 navigator.share({ text }).catch(() => {});
