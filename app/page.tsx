@@ -71,6 +71,8 @@ export default function Home() {
   // Proof-of-play tracking
   const sessionIdRef = useRef(generateSessionId());
   const roundsRef = useRef<Round[]>([]);
+  const pendingRoundsRef = useRef<Round[]>([]);
+  const pendingSessionRef = useRef("");
 
   const refreshLeaderboard = useCallback(() => {
     Promise.all([
@@ -183,9 +185,15 @@ export default function Home() {
     } else {
       setScore((prevScore) => {
         if (prevScore >= 3) {
+          // Snapshot the streak rounds (exclude the final wrong one)
           setPendingScore(prevScore);
+          pendingRoundsRef.current = roundsRef.current.slice(0, -1);
+          pendingSessionRef.current = sessionIdRef.current;
           setShowNamePrompt(true);
         }
+        // Reset for next streak
+        roundsRef.current = [];
+        sessionIdRef.current = generateSessionId();
         return 0;
       });
     }
@@ -210,15 +218,13 @@ export default function Home() {
     const result = await submitScore(
       name,
       pendingScore,
-      sessionIdRef.current,
-      roundsRef.current
+      pendingSessionRef.current,
+      pendingRoundsRef.current
     );
 
     if (result.ok) {
       setSubmitMsg("Submitted!");
       refreshLeaderboard();
-      sessionIdRef.current = generateSessionId();
-      roundsRef.current = [];
     } else {
       setSubmitMsg(result.error ?? "Failed to submit");
     }
