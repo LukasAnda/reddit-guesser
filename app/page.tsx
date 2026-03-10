@@ -395,10 +395,31 @@ export default function Home() {
         )}
       </header>
 
-      {/* Score */}
-      <div className="mt-4 flex items-baseline gap-3 tabular-nums">
-        <span className="text-3xl font-black">{score}</span>
-        {bestScore > 0 && <span className="text-xs text-zinc-400 dark:text-zinc-600">best {bestScore}</span>}
+      {/* Score + Share */}
+      <div className="mt-4 flex items-center gap-4">
+        <div className="flex items-baseline gap-3 tabular-nums">
+          <span className="text-3xl font-black">{score}</span>
+          {bestScore > 0 && <span className="text-xs text-zinc-400 dark:text-zinc-600">best {bestScore}</span>}
+        </div>
+        {displayPosts && (
+          <button
+            onClick={() => {
+              const url = `https://lukasanda.github.io/reddit-guesser/?r=${roundIdRef.current}`;
+              const text = `r/${displayPosts[0].subreddit} vs r/${displayPosts[1].subreddit} — ${score > 0 ? `${score} in a row!` : "Can you guess right?"}\n\n${url}`;
+              if (navigator.share) {
+                navigator.share({ text }).catch(() => {});
+              } else {
+                navigator.clipboard.writeText(text).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }).catch(() => {});
+              }
+            }}
+            className="rounded-full border border-zinc-200 dark:border-zinc-800 px-3 py-1 text-[11px] font-medium text-zinc-400 hover:text-foreground hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors cursor-pointer"
+          >
+            {copied ? "Copied!" : "Share"}
+          </button>
+        )}
       </div>
 
       {/* Game area */}
@@ -487,26 +508,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* Next + Share buttons */}
-      {state === "revealed" && result && !showNamePrompt && displayPosts && (
-        <div className="fixed bottom-0 left-0 right-0 flex justify-center gap-3 pb-14 md:pb-8 animate-fade-in z-20">
-          <button
-            onClick={() => {
-              const url = `https://lukasanda.github.io/reddit-guesser/?r=${roundIdRef.current}`;
-              const text = `r/${displayPosts[0].subreddit} vs r/${displayPosts[1].subreddit} — ${score > 0 ? `${score} in a row!` : "Can you guess right?"}\n\n${url}`;
-              if (navigator.share) {
-                navigator.share({ text }).catch(() => {});
-              } else {
-                navigator.clipboard.writeText(text).then(() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }).catch(() => {});
-              }
-            }}
-            className="rounded-full bg-zinc-200 dark:bg-zinc-800 px-5 py-3 text-sm font-bold tracking-tight active:scale-95 transition-transform cursor-pointer"
-          >
-            {copied ? "Copied!" : "Share"}
-          </button>
+      {/* Next button */}
+      {state === "revealed" && result && !showNamePrompt && (
+        <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-14 md:pb-8 animate-fade-in z-20">
           <button onClick={() => loadRound()} className="relative overflow-hidden rounded-full bg-zinc-300 dark:bg-zinc-800 px-7 py-3 text-sm font-bold tracking-tight active:scale-95 transition-transform cursor-pointer">
             <span className="absolute inset-0 bg-foreground origin-left animate-fill-bar" />
             <span className="relative z-10 mix-blend-difference text-white">Next</span>
