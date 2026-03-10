@@ -27,12 +27,9 @@ export default function Home() {
   const [correct, setCorrect] = useState<boolean | null>(null);
   const postCacheRef = useRef<Map<string, Post[]>>(new Map());
 
-  // Load subreddits once
   useEffect(() => {
     fetchPopularSubreddits(150)
-      .then((subs) => {
-        setSubreddits(subs);
-      })
+      .then((subs) => setSubreddits(subs))
       .catch(() => setState("error"));
   }, []);
 
@@ -55,14 +52,11 @@ export default function Home() {
     setPicked(null);
     setCorrect(null);
 
-    const maxRetries = 10;
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
       try {
         const sub1 = pickRandom(subreddits);
         let sub2 = pickRandom(subreddits);
-        while (sub2.name === sub1.name) {
-          sub2 = pickRandom(subreddits);
-        }
+        while (sub2.name === sub1.name) sub2 = pickRandom(subreddits);
 
         const [posts1, posts2] = await Promise.all([
           getPostsForSubreddit(sub1.name),
@@ -73,8 +67,6 @@ export default function Home() {
 
         const post1 = pickRandom(posts1);
         const post2 = pickRandom(posts2);
-
-        // Avoid trivially identical scores
         if (post1.ups === post2.ups) continue;
 
         setPosts([post1, post2]);
@@ -87,11 +79,8 @@ export default function Home() {
     setState("error");
   }, [subreddits, getPostsForSubreddit]);
 
-  // Start first round when subreddits are loaded
   useEffect(() => {
-    if (subreddits.length > 0 && !posts) {
-      loadRound();
-    }
+    if (subreddits.length > 0 && !posts) loadRound();
   }, [subreddits, posts, loadRound]);
 
   const handlePick = (index: 0 | 1) => {
@@ -114,20 +103,14 @@ export default function Home() {
     }
   };
 
-  const handleNext = () => {
-    loadRound();
-  };
-
   if (state === "error") {
     return (
       <div className="flex min-h-dvh items-center justify-center px-4">
         <div className="text-center space-y-4">
-          <p className="text-lg text-zinc-500">
-            Could not load data from Reddit.
-          </p>
+          <p className="text-zinc-500">Could not load data from Reddit.</p>
           <button
             onClick={() => window.location.reload()}
-            className="text-sm font-medium text-zinc-400 hover:text-zinc-200 underline underline-offset-4 cursor-pointer"
+            className="text-sm text-zinc-400 hover:text-foreground underline underline-offset-4 cursor-pointer"
           >
             Try again
           </button>
@@ -137,34 +120,43 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh flex-col items-center">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-5">
-        <h1 className="text-sm font-medium tracking-tight text-zinc-400">
-          Higher or Lower
+      <header className="w-full max-w-2xl px-6 pt-10 pb-2 text-center">
+        <h1 className="text-4xl md:text-5xl font-black tracking-tighter leading-none">
+          Higher
+          <span className="text-zinc-300 dark:text-zinc-700 mx-1">/</span>
+          Lower
         </h1>
-        <div className="flex items-center gap-4 text-sm tabular-nums">
-          {bestScore > 0 && (
-            <span className="text-zinc-500">Best {bestScore}</span>
-          )}
-          <span className="font-semibold">{score}</span>
-        </div>
+        <p className="mt-2 text-xs tracking-widest uppercase text-zinc-400 dark:text-zinc-600">
+          Which post got more upvotes?
+        </p>
       </header>
 
+      {/* Score */}
+      <div className="mt-4 flex items-baseline gap-3 tabular-nums">
+        <span className="text-3xl font-black">{score}</span>
+        {bestScore > 0 && (
+          <span className="text-xs text-zinc-400 dark:text-zinc-600">
+            best {bestScore}
+          </span>
+        )}
+      </div>
+
       {/* Game area */}
-      <main className="flex flex-1 items-center justify-center px-4 pb-12">
+      <main className="flex flex-1 w-full items-center justify-center px-4 py-8">
         {state === "loading" && !posts ? (
           <div className="flex flex-col items-center gap-3">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600 dark:border-zinc-600 dark:border-t-zinc-300" />
-            <p className="text-sm text-zinc-500">Loading...</p>
+            <p className="text-xs text-zinc-500 tracking-wide">Loading posts...</p>
           </div>
         ) : posts ? (
-          <div className="flex w-full max-w-3xl flex-col items-stretch gap-4 md:flex-row md:gap-6">
+          <div className="relative flex w-full max-w-3xl flex-col items-stretch gap-3 md:flex-row md:gap-4">
             {posts.map((post, i) => {
               const idx = i as 0 | 1;
-              const isWinner =
-                state === "revealed" &&
-                (posts[0].ups >= posts[1].ups ? 0 : 1) === idx;
+              const winner = posts[0].ups >= posts[1].ups ? 0 : 1;
+              const isWinner = state === "revealed" && winner === idx;
+              const isLoser = state === "revealed" && winner !== idx;
               const wasPicked = picked === idx;
 
               return (
@@ -173,73 +165,80 @@ export default function Home() {
                   onClick={() => handlePick(idx)}
                   disabled={state !== "playing"}
                   className={`
-                    group relative flex flex-1 flex-col justify-between rounded-2xl border p-6 text-left transition-all duration-200
-                    ${
-                      state === "playing"
-                        ? "border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-900 cursor-pointer"
-                        : state === "revealed" && isWinner
-                          ? "border-green-400/60 bg-green-50/50 dark:border-green-500/30 dark:bg-green-950/20"
-                          : "border-zinc-200 dark:border-zinc-800 opacity-60"
+                    group relative flex flex-1 flex-col justify-between rounded-xl p-5 md:p-6 text-left transition-all duration-300 min-h-[180px]
+                    ${state === "playing"
+                      ? "bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200/80 dark:hover:bg-zinc-800 cursor-pointer active:scale-[0.98]"
+                      : isWinner
+                        ? "bg-green-50 dark:bg-green-950/30 ring-2 ring-green-500/40"
+                        : "bg-zinc-100 dark:bg-zinc-900 opacity-50"
                     }
-                    ${state === "revealed" && isWinner ? "animate-pulse-win" : ""}
                   `}
                 >
-                  <div>
-                    <span className="text-xs font-medium tracking-wide uppercase text-zinc-400 dark:text-zinc-500">
-                      r/{post.subreddit}
-                    </span>
-                    <h2 className="mt-2 text-lg font-semibold leading-snug tracking-tight line-clamp-4">
-                      {post.title}
-                    </h2>
-                  </div>
+                  {/* Subreddit tag */}
+                  <span className="inline-block self-start rounded-full bg-zinc-200/80 dark:bg-zinc-800 px-2.5 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                    r/{post.subreddit}
+                  </span>
 
-                  <div className="mt-6 flex items-end justify-between">
+                  {/* Post title */}
+                  <h2 className="mt-3 text-base md:text-lg font-semibold leading-snug tracking-tight line-clamp-3">
+                    {post.title}
+                  </h2>
+
+                  {/* Bottom: vote count or prompt */}
+                  <div className="mt-4 flex items-end justify-between gap-2">
                     {state === "revealed" ? (
-                      <span
-                        className={`animate-count-up text-2xl font-bold tabular-nums ${isWinner ? "text-green-600 dark:text-green-400" : "text-zinc-400"}`}
-                      >
-                        {formatNumber(post.ups)}
-                        <span className="ml-1 text-sm font-normal">
+                      <div className="animate-count-up flex items-baseline gap-1.5">
+                        <span className={`text-2xl md:text-3xl font-black tabular-nums ${isWinner ? "text-green-600 dark:text-green-400" : "text-zinc-400 dark:text-zinc-600"}`}>
+                          {formatNumber(post.ups)}
+                        </span>
+                        <span className={`text-[11px] ${isWinner ? "text-green-600/60 dark:text-green-400/60" : "text-zinc-400/60"}`}>
                           upvotes
                         </span>
-                      </span>
+                      </div>
                     ) : (
-                      <span className="text-sm text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors">
-                        Pick this one
+                      <span className="text-xs text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 transition-colors">
+                        &uarr; this one
                       </span>
                     )}
 
                     {state === "revealed" && wasPicked && (
                       <span
-                        className={`animate-fade-in text-xs font-medium ${correct ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
+                        className={`animate-fade-in text-xs font-bold tracking-wide uppercase ${correct ? "text-green-600 dark:text-green-400" : "text-red-500"}`}
                       >
-                        {correct ? "Correct" : "Wrong"}
+                        {correct ? "Yes" : "Nope"}
+                      </span>
+                    )}
+
+                    {isLoser && !wasPicked && state === "revealed" && (
+                      <span className="animate-fade-in text-[10px] text-zinc-400 dark:text-zinc-600">
+                        lower
                       </span>
                     )}
                   </div>
                 </button>
               );
             })}
+
+            {/* VS divider */}
+            {state === "playing" && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="z-10 flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background text-[11px] font-black tracking-wider">
+                  VS
+                </span>
+              </div>
+            )}
           </div>
         ) : null}
       </main>
 
-      {/* VS badge + Next button */}
-      {posts && state === "playing" && (
-        <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
-          <span className="rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-bold tracking-widest text-white dark:bg-white dark:text-zinc-900">
-            VS
-          </span>
-        </div>
-      )}
-
+      {/* Next button */}
       {state === "revealed" && (
         <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-8 animate-fade-in">
           <button
-            onClick={handleNext}
-            className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 transition-colors cursor-pointer"
+            onClick={() => loadRound()}
+            className="rounded-full bg-foreground text-background px-7 py-3 text-sm font-bold tracking-tight hover:opacity-80 active:scale-95 transition-all cursor-pointer"
           >
-            Next round
+            Next
           </button>
         </div>
       )}
