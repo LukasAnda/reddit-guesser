@@ -26,6 +26,12 @@ interface DisplayPost {
   image: string | null;
 }
 
+interface PrefetchedRound {
+  displayPosts: [DisplayPost, DisplayPost];
+  sessionId: string;
+  roundId: string;
+}
+
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
@@ -67,6 +73,7 @@ export default function Home() {
   const sessionIdRef = useRef<string | undefined>(undefined);
   const roundIdRef = useRef<string>("");
   const postCacheRef = useRef<Map<string, Post[]>>(new Map());
+  const prefetchRef = useRef<Promise<PrefetchedRound | null> | null>(null);
 
   // Leaderboard
   const [lbData, setLbData] = useState<Record<LeaderboardPeriod, LeaderboardEntry[]>>({
@@ -123,12 +130,8 @@ export default function Home() {
     return posts;
   }, []);
 
-  const loadRound = useCallback(async () => {
-    if (subreddits.length < 2) return;
-    setState("loading");
-    setPicked(null);
-    setResult(null);
-
+  const buildRound = useCallback(async (sid: string | undefined): Promise<PrefetchedRound | null> => {
+    if (subreddits.length < 2) return null;
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
         const sub1 = pickRandom(subreddits);
@@ -145,30 +148,53 @@ export default function Home() {
         const post2 = pickRandom(posts2);
         if (post1.ups === post2.ups) continue;
 
-        // Register round with server (sends upvotes, server stores them)
         const reg = await registerRound(
-          sessionIdRef.current,
+          sid,
           { title: post1.title, subreddit: post1.subreddit, image: post1.imageUrl, ups: post1.ups },
           { title: post2.title, subreddit: post2.subreddit, image: post2.imageUrl, ups: post2.ups }
         );
 
-        sessionIdRef.current = reg.session_id;
-        roundIdRef.current = reg.round_id;
-
-        // Display posts WITHOUT upvotes
-        setDisplayPosts([
-          { title: post1.title, subreddit: post1.subreddit, image: post1.imageUrl },
-          { title: post2.title, subreddit: post2.subreddit, image: post2.imageUrl },
-        ]);
-        setImgErrors(new Set());
-        setState("playing");
-        return;
+        return {
+          displayPosts: [
+            { title: post1.title, subreddit: post1.subreddit, image: post1.imageUrl },
+            { title: post2.title, subreddit: post2.subreddit, image: post2.imageUrl },
+          ],
+          sessionId: reg.session_id,
+          roundId: reg.round_id,
+        };
       } catch {
         continue;
       }
     }
-    setState("error");
+    return null;
   }, [subreddits, getPostsForSubreddit]);
+
+  const prefetchNextRound = useCallback(() => {
+    prefetchRef.current = buildRound(sessionIdRef.current);
+  }, [buildRound]);
+
+  const loadRound = useCallback(async () => {
+    if (subreddits.length < 2) return;
+    setState("loading");
+    setPicked(null);
+    setResult(null);
+
+    // Use prefetched round if available
+    const prefetched = prefetchRef.current;
+    prefetchRef.current = null;
+
+    const round = prefetched ? await prefetched : await buildRound(sessionIdRef.current);
+
+    if (round) {
+      sessionIdRef.current = round.sessionId;
+      roundIdRef.current = round.roundId;
+      setDisplayPosts(round.displayPosts);
+      setImgErrors(new Set());
+      setState("playing");
+    } else {
+      setState("error");
+    }
+  }, [subreddits, buildRound]);
 
   useEffect(() => {
     if (subreddits.length > 0 && !displayPosts) loadRound();
@@ -186,6 +212,8 @@ export default function Home() {
       if (res.correct) {
         setScore(res.score);
         setBestScore((b) => Math.max(b, res.score));
+        // Prefetch next round immediately while user sees the result
+        prefetchNextRound();
       } else {
         if (res.score >= 3) {
           setPendingScore(res.score);
@@ -194,11 +222,13 @@ export default function Home() {
         }
         setScore(0);
         sessionIdRef.current = undefined;
+        // New session — prefetch with undefined sessionId
+        prefetchNextRound();
       }
     } catch {
       setState("error");
     }
-  }, [state, displayPosts]);
+  }, [state, displayPosts, prefetchNextRound]);
 
   useEffect(() => {
     if (state !== "revealed" || !result || showNamePrompt) return;
