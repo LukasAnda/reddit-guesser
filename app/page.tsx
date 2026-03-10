@@ -25,12 +25,26 @@ export default function Home() {
   const [bestScore, setBestScore] = useState(0);
   const [picked, setPicked] = useState<0 | 1 | null>(null);
   const [correct, setCorrect] = useState<boolean | null>(null);
+  const [visitors, setVisitors] = useState<number | null>(null);
   const postCacheRef = useRef<Map<string, Post[]>>(new Map());
 
   useEffect(() => {
     fetchPopularSubreddits(150)
       .then((subs) => setSubreddits(subs))
       .catch(() => setState("error"));
+
+    // Count unique visitors (once per browser)
+    if (!localStorage.getItem("counted")) {
+      fetch("https://api.counterapi.dev/v1/reddit-guesser/visits/up")
+        .then((r) => r.json())
+        .then((d) => { setVisitors(d.count); localStorage.setItem("counted", "1"); })
+        .catch(() => {});
+    } else {
+      fetch("https://api.counterapi.dev/v1/reddit-guesser/visits")
+        .then((r) => r.json())
+        .then((d) => setVisitors(d.count))
+        .catch(() => {});
+    }
   }, []);
 
   const getPostsForSubreddit = useCallback(
@@ -138,6 +152,11 @@ export default function Home() {
         <p className="mt-2 text-xs tracking-widest uppercase text-zinc-400 dark:text-zinc-600">
           Which post got more upvotes?
         </p>
+        {visitors !== null && (
+          <p className="mt-1.5 text-[10px] text-zinc-300 dark:text-zinc-700 tabular-nums">
+            {visitors.toLocaleString()} players
+          </p>
+        )}
       </header>
 
       {/* Score */}
