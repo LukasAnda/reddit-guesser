@@ -49,6 +49,12 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d`;
 }
 
+function inflateCount(real: number): number {
+  // Base offset + tapering multiplier: ~23k at 0, grows ~37x early, settles ~15x at scale
+  // Caps at 999,999 to avoid overflow into millions
+  return Math.min(Math.floor(23000 + real * (15 + 22 / (1 + real / 500))), 999_999);
+}
+
 const PERIODS: { key: LeaderboardPeriod; label: string }[] = [
   { key: "daily", label: "24h" },
   { key: "weekly", label: "7d" },
@@ -106,12 +112,12 @@ export default function Home() {
     if (!localStorage.getItem("counted")) {
       fetch(counterBase + encodeURIComponent("/up"))
         .then((r) => r.json())
-        .then((d) => { setVisitors(23000 + (d.count || 0)); localStorage.setItem("counted", "1"); })
+        .then((d) => { setVisitors(inflateCount(d.count || 0)); localStorage.setItem("counted", "1"); })
         .catch(() => {});
     } else {
       fetch(counterBase)
         .then((r) => r.json())
-        .then((d) => setVisitors(23000 + (d.count || 0)))
+        .then((d) => setVisitors(inflateCount(d.count || 0)))
         .catch(() => {});
     }
 
