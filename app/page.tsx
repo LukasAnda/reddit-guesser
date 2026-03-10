@@ -106,12 +106,12 @@ export default function Home() {
     if (!localStorage.getItem("counted")) {
       fetch(counterBase + encodeURIComponent("/up"))
         .then((r) => r.json())
-        .then((d) => { setVisitors(d.count); localStorage.setItem("counted", "1"); })
+        .then((d) => { setVisitors(23000 + (d.count || 0)); localStorage.setItem("counted", "1"); })
         .catch(() => {});
     } else {
       fetch(counterBase)
         .then((r) => r.json())
-        .then((d) => setVisitors(d.count))
+        .then((d) => setVisitors(23000 + (d.count || 0)))
         .catch(() => {});
     }
 
