@@ -395,31 +395,10 @@ export default function Home() {
         )}
       </header>
 
-      {/* Score + Share */}
-      <div className="mt-4 flex items-center gap-4">
-        <div className="flex items-baseline gap-3 tabular-nums">
-          <span className="text-3xl font-black">{score}</span>
-          {bestScore > 0 && <span className="text-xs text-zinc-400 dark:text-zinc-600">best {bestScore}</span>}
-        </div>
-        {displayPosts && (
-          <button
-            onClick={() => {
-              const url = `https://lukasanda.github.io/reddit-guesser/?r=${roundIdRef.current}`;
-              const text = `r/${displayPosts[0].subreddit} vs r/${displayPosts[1].subreddit} — ${score > 0 ? `${score} in a row!` : "Can you guess right?"}\n\n${url}`;
-              if (navigator.share) {
-                navigator.share({ text }).catch(() => {});
-              } else {
-                navigator.clipboard.writeText(text).then(() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }).catch(() => {});
-              }
-            }}
-            className="rounded-full border border-zinc-200 dark:border-zinc-800 px-3 py-1 text-[11px] font-medium text-zinc-400 hover:text-foreground hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors cursor-pointer"
-          >
-            {copied ? "Copied!" : "Share"}
-          </button>
-        )}
+      {/* Score */}
+      <div className="mt-4 flex items-baseline gap-3 tabular-nums">
+        <span className="text-3xl font-black">{score}</span>
+        {bestScore > 0 && <span className="text-xs text-zinc-400 dark:text-zinc-600">best {bestScore}</span>}
       </div>
 
       {/* Game area */}
@@ -506,6 +485,29 @@ export default function Home() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Share */}
+      {displayPosts && (state === "playing" || state === "revealed") && (
+        <button
+          onClick={() => {
+            const url = `https://lukasanda.github.io/reddit-guesser/?r=${roundIdRef.current}`;
+            const text = `r/${displayPosts[0].subreddit} vs r/${displayPosts[1].subreddit} — ${score > 0 ? `${score} in a row!` : "Can you guess right?"}\n\n${url}`;
+            if (navigator.share) {
+              navigator.share({ text }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(text).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }).catch(() => {});
+            }
+          }}
+          className="mb-2 flex items-center gap-1.5 text-zinc-400 hover:text-foreground transition-colors cursor-pointer"
+          title="Share this matchup"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          <span className="text-[11px] font-medium">{copied ? "Copied!" : "Share"}</span>
+        </button>
       )}
 
       {/* Next button */}
