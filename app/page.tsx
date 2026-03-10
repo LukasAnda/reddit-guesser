@@ -88,6 +88,7 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [pendingScore, setPendingScore] = useState(0);
   const pendingSessionRef = useRef("");
 
@@ -460,9 +461,26 @@ export default function Home() {
         </div>
       )}
 
-      {/* Next button */}
-      {state === "revealed" && result && !showNamePrompt && (
-        <div className="fixed bottom-0 left-0 right-0 flex justify-center pb-14 md:pb-8 animate-fade-in z-20">
+      {/* Next + Share buttons */}
+      {state === "revealed" && result && !showNamePrompt && displayPosts && (
+        <div className="fixed bottom-0 left-0 right-0 flex justify-center gap-3 pb-14 md:pb-8 animate-fade-in z-20">
+          <button
+            onClick={() => {
+              const url = "https://lukasanda.github.io/reddit-guesser/";
+              const text = `r/${displayPosts[0].subreddit} vs r/${displayPosts[1].subreddit} — ${score > 0 ? `${score} in a row!` : "Can you guess right?"}\n\n${url}`;
+              if (navigator.share) {
+                navigator.share({ text }).catch(() => {});
+              } else {
+                navigator.clipboard.writeText(text).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }).catch(() => {});
+              }
+            }}
+            className="rounded-full bg-zinc-200 dark:bg-zinc-800 px-5 py-3 text-sm font-bold tracking-tight active:scale-95 transition-transform cursor-pointer"
+          >
+            {copied ? "Copied!" : "Share"}
+          </button>
           <button onClick={() => loadRound()} className="relative overflow-hidden rounded-full bg-zinc-300 dark:bg-zinc-800 px-7 py-3 text-sm font-bold tracking-tight active:scale-95 transition-transform cursor-pointer">
             <span className="absolute inset-0 bg-foreground origin-left animate-fill-bar" />
             <span className="relative z-10 mix-blend-difference text-white">Next</span>
