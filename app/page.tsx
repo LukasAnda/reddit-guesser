@@ -493,14 +493,10 @@ export default function Home() {
           onClick={() => {
             const url = `https://lukasanda.github.io/reddit-guesser/?r=${roundIdRef.current}`;
             const text = `r/${displayPosts[0].subreddit} vs r/${displayPosts[1].subreddit} — ${score > 0 ? `${score} in a row!` : "Can you guess right?"}\n\n${url}`;
-            if (navigator.share) {
-              navigator.share({ text }).catch(() => {});
-            } else {
-              navigator.clipboard.writeText(text).then(() => {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }).catch(() => {});
-            }
+            navigator.clipboard.writeText(text).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }).catch(() => {});
           }}
           className="mb-6 flex items-center gap-1.5 text-zinc-400 hover:text-foreground transition-colors cursor-pointer"
           title="Share this matchup"
