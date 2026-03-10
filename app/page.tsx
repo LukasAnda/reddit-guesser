@@ -99,10 +99,9 @@ export default function Home() {
     if (subreddits.length > 0 && !posts) loadRound();
   }, [subreddits, posts, loadRound]);
 
-  const handlePick = (index: 0 | 1) => {
+  const handlePick = useCallback((index: 0 | 1) => {
     if (state !== "playing" || !posts) return;
     setPicked(index);
-    setState("revealed");
 
     const winner = posts[0].ups >= posts[1].ups ? 0 : 1;
     const isCorrect = index === winner;
@@ -117,7 +116,9 @@ export default function Home() {
     } else {
       setScore(0);
     }
-  };
+
+    setState("revealed");
+  }, [state, posts]);
 
   useEffect(() => {
     if (state !== "revealed") return;
