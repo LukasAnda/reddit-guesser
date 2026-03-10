@@ -61,12 +61,7 @@ export default function Home() {
   const [result, setResult] = useState<PickResult | null>(null);
   const [state, setState] = useState<GameState>("loading");
   const [score, setScore] = useState(0);
-  const [bestScore, setBestScore] = useState(() => {
-    if (typeof window !== "undefined") {
-      return parseInt(localStorage.getItem("bestScore") || "0", 10);
-    }
-    return 0;
-  });
+  const [bestScore, setBestScore] = useState(0);
   const [picked, setPicked] = useState<0 | 1 | null>(null);
   const [visitors, setVisitors] = useState<number | null>(null);
   const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
@@ -123,6 +118,8 @@ export default function Home() {
     refreshLeaderboard();
     const saved = localStorage.getItem("playerName");
     if (saved) setNameInput(saved);
+    const savedBest = localStorage.getItem("bestScore");
+    if (savedBest) setBestScore(parseInt(savedBest, 10));
   }, [refreshLeaderboard]);
 
   const getPostsForSubreddit = useCallback(async (sub: string): Promise<Post[]> => {
