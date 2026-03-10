@@ -103,6 +103,13 @@ export default function Home() {
     }
   };
 
+  // Auto-advance after 3 seconds
+  useEffect(() => {
+    if (state !== "revealed") return;
+    const timer = setTimeout(() => loadRound(), 3000);
+    return () => clearTimeout(timer);
+  }, [state, loadRound]);
+
   if (state === "error") {
     return (
       <div className="flex min-h-dvh items-center justify-center px-4">
