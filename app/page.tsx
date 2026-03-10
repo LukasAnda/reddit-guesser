@@ -28,6 +28,7 @@ interface DisplayPost {
 
 interface PrefetchedRound {
   displayPosts: [DisplayPost, DisplayPost];
+  ups: [number, number];
   sessionId: string;
   roundId: string;
 }
@@ -74,6 +75,8 @@ export default function Home() {
   const roundIdRef = useRef<string>("");
   const postCacheRef = useRef<Map<string, Post[]>>(new Map());
   const prefetchRef = useRef<Promise<PrefetchedRound | null> | null>(null);
+  const upsRef = useRef<[number, number]>([0, 0]);
+  const localScoreRef = useRef(0);
 
   // Leaderboard
   const [lbData, setLbData] = useState<Record<LeaderboardPeriod, LeaderboardEntry[]>>({
@@ -159,6 +162,7 @@ export default function Home() {
             { title: post1.title, subreddit: post1.subreddit, image: post1.imageUrl },
             { title: post2.title, subreddit: post2.subreddit, image: post2.imageUrl },
           ],
+          ups: [post1.ups, post2.ups],
           sessionId: reg.session_id,
           roundId: reg.round_id,
         };
@@ -188,6 +192,7 @@ export default function Home() {
     if (round) {
       sessionIdRef.current = round.sessionId;
       roundIdRef.current = round.roundId;
+      upsRef.current = round.ups;
       setDisplayPosts(round.displayPosts);
       setImgErrors(new Set());
       setState("playing");
@@ -197,37 +202,60 @@ export default function Home() {
   }, [subreddits, buildRound]);
 
   useEffect(() => {
-    if (subreddits.length > 0 && !displayPosts) loadRound();
+    if (subreddits.length > 0 && !displayPosts) {
+      localScoreRef.current = 0;
+      loadRound();
+    }
   }, [subreddits, displayPosts, loadRound]);
 
-  const handlePick = useCallback(async (index: 0 | 1) => {
+  const handlePick = useCallback((index: 0 | 1) => {
     if (state !== "playing" || !displayPosts) return;
+
+    // Instant optimistic result from local data
+    const [aUps, bUps] = upsRef.current;
+    const correct = index === (aUps >= bUps ? 0 : 1);
+    const newScore = correct ? localScoreRef.current + 1 : localScoreRef.current;
+    const optimisticResult: PickResult = {
+      correct,
+      post_a_ups: aUps,
+      post_b_ups: bUps,
+      score: newScore,
+      game_over: !correct,
+    };
+
     setPicked(index);
+    setResult(optimisticResult);
     setState("revealed");
 
-    try {
-      const res = await submitPick(sessionIdRef.current!, roundIdRef.current, index);
-      setResult(res);
-
-      if (res.correct) {
-        setScore(res.score);
-        setBestScore((b) => Math.max(b, res.score));
-        // Prefetch next round immediately while user sees the result
-        prefetchNextRound();
-      } else {
-        if (res.score >= 3) {
-          setPendingScore(res.score);
-          pendingSessionRef.current = sessionIdRef.current!;
-          setShowNamePrompt(true);
-        }
-        setScore(0);
-        sessionIdRef.current = undefined;
-        // New session — prefetch with undefined sessionId
-        prefetchNextRound();
+    if (correct) {
+      localScoreRef.current = newScore;
+      setScore(newScore);
+      setBestScore((b) => Math.max(b, newScore));
+    } else {
+      if (localScoreRef.current >= 3) {
+        setPendingScore(localScoreRef.current);
+        pendingSessionRef.current = sessionIdRef.current!;
+        setShowNamePrompt(true);
       }
-    } catch {
-      setState("error");
+      localScoreRef.current = 0;
+      setScore(0);
     }
+
+    // Fire server call in background — score reconciliation + keeps session state valid
+    const sid = sessionIdRef.current!;
+    const rid = roundIdRef.current;
+    submitPick(sid, rid, index).then((serverRes) => {
+      // Reconcile with server-authoritative score if it differs
+      if (serverRes.correct) {
+        localScoreRef.current = serverRes.score;
+        setScore(serverRes.score);
+        setBestScore((b) => Math.max(b, serverRes.score));
+      }
+    }).catch(() => {});
+
+    // Prefetch next round immediately
+    if (!correct) sessionIdRef.current = undefined;
+    prefetchNextRound();
   }, [state, displayPosts, prefetchNextRound]);
 
   useEffect(() => {
