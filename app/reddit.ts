@@ -11,16 +11,24 @@ export interface Subreddit {
 }
 
 const REDDIT_BASE = "https://www.reddit.com";
-const PROXY_URL = "https://zunpdnovztwohmehzmef.supabase.co/functions/v1/reddit-proxy";
+
+const PROXIES = [
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
 
 async function fetchJson(url: string) {
-  const res = await fetch(PROXY_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
-  if (!res.ok) throw new Error(`Reddit API error: ${res.status}`);
-  return res.json();
+  for (const proxy of PROXIES) {
+    try {
+      const res = await fetch(proxy(url));
+      if (!res.ok) continue;
+      return await res.json();
+    } catch {
+      continue;
+    }
+  }
+  throw new Error("All proxies failed");
 }
 
 function extractImageUrl(post: Record<string, unknown>): string | null {

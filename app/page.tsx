@@ -135,15 +135,15 @@ export default function Home() {
       .then((subs) => setSubreddits(subs))
       .catch(() => setState("error"));
 
-    const proxyUrl = "https://zunpdnovztwohmehzmef.supabase.co/functions/v1/reddit-proxy";
     const counterUrl = "https://api.counterapi.dev/v1/reddit-guesser/visits";
+    const proxyCounter = (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
     if (!localStorage.getItem("counted")) {
-      fetch(proxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: counterUrl + "/up" }) })
+      fetch(proxyCounter(counterUrl + "/up"))
         .then((r) => r.json())
         .then((d) => { setVisitors(inflateCount(d.count || 0)); localStorage.setItem("counted", "1"); })
         .catch(() => {});
     } else {
-      fetch(proxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: counterUrl }) })
+      fetch(proxyCounter(counterUrl))
         .then((r) => r.json())
         .then((d) => setVisitors(inflateCount(d.count || 0)))
         .catch(() => {});
