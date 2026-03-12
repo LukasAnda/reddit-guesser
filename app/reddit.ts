@@ -11,11 +11,14 @@ export interface Subreddit {
 }
 
 const REDDIT_BASE = "https://www.reddit.com";
-const CORS_PROXY = "https://corsproxy.io/?url=";
+const PROXY_URL = "https://zunpdnovztwohmehzmef.supabase.co/functions/v1/reddit-proxy";
 
 async function fetchJson(url: string) {
-  const proxiedUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
-  const res = await fetch(proxiedUrl);
+  const res = await fetch(PROXY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
   if (!res.ok) throw new Error(`Reddit API error: ${res.status}`);
   return res.json();
 }

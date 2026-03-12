@@ -135,14 +135,15 @@ export default function Home() {
       .then((subs) => setSubreddits(subs))
       .catch(() => setState("error"));
 
-    const counterBase = "https://corsproxy.io/?url=" + encodeURIComponent("https://api.counterapi.dev/v1/reddit-guesser/visits");
+    const proxyUrl = "https://zunpdnovztwohmehzmef.supabase.co/functions/v1/reddit-proxy";
+    const counterUrl = "https://api.counterapi.dev/v1/reddit-guesser/visits";
     if (!localStorage.getItem("counted")) {
-      fetch(counterBase + encodeURIComponent("/up"))
+      fetch(proxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: counterUrl + "/up" }) })
         .then((r) => r.json())
         .then((d) => { setVisitors(inflateCount(d.count || 0)); localStorage.setItem("counted", "1"); })
         .catch(() => {});
     } else {
-      fetch(counterBase)
+      fetch(proxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: counterUrl }) })
         .then((r) => r.json())
         .then((d) => setVisitors(inflateCount(d.count || 0)))
         .catch(() => {});
